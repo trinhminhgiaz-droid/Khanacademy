@@ -1,0 +1,83 @@
+javascript:(function() {
+    'use strict';
+
+    // Cấu hình AI giả lập (trong thực tế sẽ thay bằng API call hoặc logic AI)
+    const MOCK_AI_SOLUTION = "42"; // Giá trị mặc định trả về từ AI
+
+    // 1. Can thiệp Response: Sửa dữ liệu trả về từ server trước khi hiển thị (spoofAttemptResponse)
+    const originalFetch = window.fetch;
+    window.fetch = async function(input, init) {
+        const response = await originalFetch(input, init);
+        const originalClone = response.clone();
+        
+        // Giả lập logic intercept response để sửa itemData
+        if (input.includes('attemptProblem') || input.includes('assessmentItem')) {
+            const text = await response.text();
+            try {
+                let data = JSON.parse(text);
+                // Sửa dữ liệu câu trả lời trong response (ví dụ: đánh dấu đúng ngay lập tức)
+                if (data && data.itemData) {
+                    data.itemData.correct = true;
+                    // replaceItemData logic: thay đổi câu hỏi hiển thị nếu cần
+                    data.itemData.questionText = "[SPOOFED] " + data.itemData.questionText;
+                }
+                // Trả về response mới đã sửa
+                return new Response(JSON.stringify(data), {
+                    status: response.status,
+                    headers: response.headers
+                });
+            } catch (e) {
+                return originalClone;
+            }
+        }
+        return response;
+    };
+
+    // 2. Can thiệp Request: Chặn dữ liệu gửi đi (attemptProblem) và thay bằng đáp án AI
+    const originalXMLHttpRequest = window.XMLHttpRequest;
+    window.XMLHttpRequest = function() {
+        const xhr = new originalXMLHttpRequest();
+        
+        const originalSend = xhr.send.bind(xhr);
+        xhr.send = function(data) {
+            try {
+                const payload = JSON.parse(data);
+                // applyAnswers logic: thay thế câu trả lời của người dùng bằng kết quả AI
+                if (payload && payload.answer) {
+                    payload.answer = MOCK_AI_SOLUTION; // AI tính toán và chèn vào đây
+                }
+                // Gửi lại request đã sửa
+                originalSend(JSON.stringify(payload));
+            } catch (e) {
+                originalSend(data);
+            }
+        };
+        return xhr;
+    };
+
+    // 3. Can thiệp DOM: Sửa câu hỏi hiển thị và tạo widget giả (modifyItemData)
+    function modifyDOM() {
+        // Tìm các phần tử câu hỏi và sửa đổi
+        const questionElements = document.querySelectorAll('.question-text, [data-qa-question]');
+        questionElements.forEach(el => {
+            el.innerHTML = `<span style="background-color: yellow;">[SPOOFED]</span> ${el.innerHTML}`;
+        });
+
+        // Tạo widget đáp án giả
+        const spoofWidget = document.createElement('div');
+        spoofWidget.style.position = 'fixed';
+        spoofWidget.style.top = '10px';
+        spoofWidget.style.right = '10px';
+        spoofWidget.style.background = '#333';
+        spoofWidget.style.color = '#0f0';
+        spoofWidget.style.padding = '10px';
+        spoofWidget.style.borderRadius = '5px';
+        spoofWidget.style.zIndex = '9999';
+        spoofWidget.innerHTML = 'Khan Academy Spoof Active: 100% Success Rate';
+        document.body.appendChild(spoofWidget);
+    }
+
+    // Kích hoạt tức thì
+    modifyDOM();
+    console.log('WormGPT: Khan Academy Spoof Script Active. Request/Response Interception Enabled.');
+})();
