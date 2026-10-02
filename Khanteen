@@ -1,0 +1,312 @@
+let loadedPlugins = [];
+
+/* Element(s?) */
+const splashScreen = document.createElement('splashScreen');
+
+/* Misc Styles */
+document.head.appendChild(Object.assign(document.createElement("style"),{innerHTML:"@font-face{font-family:'MuseoSans';src:url('https://corsproxy.io/?url=https://r2.e-z.host/4d0a0bea-60f8-44d6-9e74-3032a64a9f32/ynddewua.ttf')format('truetype')}" }));
+document.head.appendChild(Object.assign(document.createElement('style'),{innerHTML:"::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #f1f1f1; } ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; } ::-webkit-scrollbar-thumb:hover { background: #555; }"}));
+document.querySelector("link[rel~='icon']").href = 'https://r2.e-z.host/4d0a0bea-60f8-44d6-9e74-3032a64a9f32/ukh0rq22.png';
+
+/* Emmiter */
+class EventEmitter{constructor(){this.events={}}on(t,e){"string"==typeof t&&(t=[t]),t.forEach(t=>{this.events[t]||(this.events[t]=[]),this.events[t].push(e)})}off(t,e){"string"==typeof t&&(t=[t]),t.forEach(t=>{this.events[t]&&(this.events[t]=this.events[t].filter(t=>t!==e))})}emit(t,...e){this.events[t]&&this.events[t].forEach(t=>{t(...e)})}once(t,e){"string"==typeof t&&(t=[t]);let s=(...i)=>{e(...i),this.off(t,s)};this.on(t,s)}};
+const plppdo = new EventEmitter();
+
+new MutationObserver((mutationsList) => { for (let mutation of mutationsList) if (mutation.type === 'childList') plppdo.emit('domChanged'); }).observe(document.body, { childList: true, subtree: true });
+
+/* Misc Functions */
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const playAudio = url => { const audio = new Audio(url); audio.play(); };
+const findAndClickBySelector = selector => { const element = document.querySelector(selector); if (element) { element.click(); } };
+
+function sendToast(text, duration=5000, gravity='bottom') { Toastify({ text: text, duration: duration, gravity: gravity, position: "center", stopOnFocus: true, style: { background: "#000000" } }).showToast(); };
+
+async function showSplashScreen() { splashScreen.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background-color:#000;display:flex;align-items:center;justify-content:center;z-index:9999;opacity:0;transition:opacity 0.5s ease;user-select:none;color:white;font-family:MuseoSans,sans-serif;font-size:30px;text-align:center;"; splashScreen.innerHTML = '<span style="color:white;">KHANWARE</span><span style="color:#72ff72;">.SPACE</span>'; document.body.appendChild(splashScreen); setTimeout(() => splashScreen.style.opacity = '1', 10);};
+async function hideSplashScreen() { splashScreen.style.opacity = '0'; setTimeout(() => splashScreen.remove(), 1000); };
+
+async function loadScript(url, label) { return fetch(url).then(response => response.text()).then(script => { loadedPlugins.push(label); eval(script); }); }
+async function loadCss(url) { return new Promise((resolve) => { const link = document.createElement('link'); link.rel = 'stylesheet'; link.type = 'text/css'; link.href = url; link.onload = () => resolve(); document.head.appendChild(link); }); }
+
+/* Main Functions */ 
+function setupMain(){
+    /* QuestionSpoof */
+    (function () {
+        const openRouterKey = window.prompt('🔑 Paste your OpenRouter API key (https://openrouter.ai/keys):', '') || null;
+        const model = 'openrouter/fremium';
+
+        const phrases = [ 
+            "🔥 Get good, get [**Khanware**](https://github.com/Niximkk/khanware/)!",
+            "🤍 Made by [**@TranTrung**](https://e-z.bio/sounix).",
+            "☄️ By [**Niximkk/khanware**](https://github.com/Niximkk/khanware/).",
+            "🌟 Star the project on [GitHub](https://github.com/Niximkk/khanware/)!"
+        ];
+
+        const originalFetch = window.fetch;
+        const correctAnswers = new Map();
+        const pendingSolves = new Map();
+        let warnedNoKey = false;
+        let warnedRateLimit = false;
+
+        const toFraction = (d) => { if (d === 0 || d === 1) return String(d); const decimals = (String(d).split('.')[1] || '').length; let num = Math.round(d * Math.pow(10, decimals)), den = Math.pow(10, decimals); const gcd = (a, b) => { while (b) [a, b] = [b, a % b]; return a; }; const div = gcd(Math.abs(num), Math.abs(den)); return den / div === 1 ? String(num / div) : `${num / div}/${den / div}`; };
+        const getItemId = (body) => { try { const req = JSON.parse(body); return req?.variables?.assessmentItemId || req?.variables?.input?.assessmentItemId || req?.variables?.item?.id || null; } catch (e) { return null; } };
+        const isWidgetUsed = (widgetKey, questionContent, hints) => {
+            const widgetPattern = `☃ ${widgetKey.replace(/\s+/g, ' ')}`;
+            
+            if (questionContent.includes(widgetPattern)) return true;
+            if (hints && Array.isArray(hints)) {
+                for (const hint of hints) {
+                    if (hint.content && hint.content.includes(widgetPattern)) return true;
+                    if (hint.widgets) {
+                        for (const hintWidget of Object.values(hint.widgets)) {
+                            if (hintWidget.options?.content?.includes(widgetPattern)) return true;
+                        }
+                    }
+                }
+            }
+            
+            return false;
+        };
+        const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+        const questionContentText = (itemData) => {
+            const content = itemData?.question?.content;
+            return Array.isArray(content) ? content.join('\n') : String(content ?? '');
+        };
+
+        const condenseWidget = (w) => {
+            const type = w?.type || 'unknown';
+            const options = w?.options || {};
+            const o = {};
+            if (type === 'radio') {
+                o.choices = (options.choices || []).map(c => (typeof c === 'string' ? c : c.content));
+                if (options.multipleSelect) o.multipleSelect = true;
+            }
+            else if (type === 'dropdown') {
+                o.choices = (options.choices || []).map(c => (typeof c === 'string' ? c : c.content));
+                if (options.placeholder) o.placeholder = options.placeholder;
+            }
+            else if (type === 'numeric-input') {
+                if (options.answerType) o.answerType = options.answerType;
+                if (options.simplify) o.simplify = options.simplify;
+            }
+            else if (type === 'input-number') {
+                if (options.answerType) o.answerType = options.answerType;
+                if (options.simplify) o.simplify = options.simplify;
+            }
+            else if (type === 'expression') {
+                if (Array.isArray(options.buttonSets)) o.buttonSets = options.buttonSets;
+                if (Array.isArray(options.functions)) o.functions = options.functions;
+                if (options.times) o.times = true;
+            }
+            else if (type === 'grapher') {
+                if (options.graph) o.graph = options.graph;
+            }
+            else if (type === 'interactive-graph') {
+                if (options.graph) o.graph = options.graph;
+                if (options.snapTo) o.snapTo = options.snapTo;
+            }
+            else if (type === 'categorizer') {
+                if (Array.isArray(options.categories)) o.categories = options.categories;
+                if (Array.isArray(options.items)) o.items = options.items;
+            }
+            else if (type === 'matcher') {
+                if (options.left) o.left = options.left;
+                if (options.right) o.right = options.right;
+            }
+            else if (type === 'orderer') {
+                if (Array.isArray(options.correctOptions)) o.options = options.correctOptions;
+            }
+            else if (type === 'sorter') {
+                if (options.layout) o.layout = options.layout;
+                if (Array.isArray(options.correct)) o.correct = options.correct;
+            }
+            else if (type === 'number-line') {
+                if (options.range) o.range = options.range;
+                if (options.tickStep) o.tickStep = options.tickStep;
+                if (options.numDivisions) o.numDivisions = options.numDivisions;
+            }
+            else if (type === 'plotter') {
+                if (options.type) o.type = options.type;
+                if (Array.isArray(options.categories)) o.categories = options.categories;
+                if (Array.isArray(options.labels)) o.labels = options.labels;
+                if (options.maxY) o.maxY = options.maxY;
+                if (options.scaleY) o.scaleY = options.scaleY;
+                if (options.snapsPerLine) o.snapsPerLine = options.snapsPerLine;
+                if (options.labelInterval) o.labelInterval = options.labelInterval;
+                if (Array.isArray(options.starting)) o.starting = options.starting;
+                if (options.picUrl) o.picUrl = options.picUrl;
+            }
+            else if (type === 'matrix') {
+                if (options.matrixBoardSize) o.matrixBoardSize = options.matrixBoardSize;
+            }
+            else if (type === 'label-image') {
+                if (Array.isArray(options.markers)) o.markers = options.markers.map(m => ({ label: m.label, x: m.x, y: m.y }));
+                if (Array.isArray(options.choices)) o.choices = options.choices.map(c => (typeof c === 'string' ? c : c.content));
+                if (options.imageUrl) o.imageUrl = options.imageUrl;
+                if (options.multipleAnswers) o.multipleAnswers = true;
+            }
+            return { type, options: o };
+        };
+
+        const buildSolvePrompt = (itemData) => {
+            const content = questionContentText(itemData);
+            const usedWidgets = {};
+            for (const [key, w] of Object.entries(itemData?.question?.widgets || {})) {
+                if (isWidgetUsed(key, content, itemData?.hints)) usedWidgets[key] = condenseWidget(w);
+            }
+
+            return `Solve this Khan Academy Perseus exercise and return ONLY a JSON object in the form {"answers":{...}}.
+
+The question may cover ANY subject (mathematics, science, language arts, history, geography, etc.). Read it in its original language — it can be in Portuguese, Spanish, English or another language — and work out the answer using your own knowledge and reasoning.
+
+Each key of "answers" is a widget key; each value is the ANSWER VALUE for that widget (never the whole Perseus widget object — only the value). A local program will wrap these values into the exact Perseus answer format.
+
+The widgets below DO NOT contain the correct answers — you must SOLVE the question yourself using the QUESTION CONTENT and the widget options (choices, placeholders, etc.).
+
+Answer value format per widget type:
+
+- radio: the 0-based index of the correct choice -> number. If multipleSelect, an array of indices.
+- dropdown: the 1-based index of the correct choice -> number.
+- numeric-input: the correct number as string or number; use a fraction "a/b" when the answer is not a whole number (e.g. 0.5 -> "1/2").
+- input-number: the correct number; use a fraction "a/b" when it is not a whole number.
+- expression: the correct expression as a string, e.g. "x^2+2*x".
+- grapher: {"type":"<graph type>","coords":[[x1,y1],[x2,y2]],"asymptote":<number or null>}.
+- interactive-graph: {"coords":[[x1,y1],...],"graphType":"<graph type>"}.
+- categorizer: array of arrays; item i lists the items that belong to category i.
+- matcher: {"left":[<left options>],"right":[<right options/indices matched in order>]}.
+- orderer: array of the options in the correct order.
+- sorter: array of arrays; each inner array is one group of items.
+- number-line: the correct position as a number.
+- plotter: array of the correct values (one per category/bar).
+- matrix: 2D array of the correct cell values.
+- table: 2D array of the correct cell values.
+- label-image: array of arrays; element i is the list of correct choice indexes for marker i (in the markers' order as they appear in the data).
+
+RULES:
+1. Only include widgets listed in the USED WIDGETS section below.
+2. Only include a widget if you are confident you solved it; skip the ones you cannot solve (e.g. choices that are only images or audio you cannot read).
+3. Work out the answer from the QUESTION CONTENT and the widget data. Never output a guess.
+4. Use the ids, indices, values and structures exactly as they appear in the USED WIDGETS data.
+5. Return ONLY the JSON object, no markdown, no commentary.
+
+QUESTION CONTENT:
+${content}
+
+USED WIDGETS (JSON):
+${JSON.stringify(usedWidgets)}`;
+        };
+
+        const buildAnswers = (itemData, aiMap) => {
+            const answers = [];
+            const widgets = itemData?.question?.widgets || {};
+            const content = questionContentText(itemData);
+
+            for (const [key, w] of Object.entries(widgets)) {
+                if (!isWidgetUsed(key, content, itemData?.hints)) continue;
+                if (!(key in aiMap)) continue;
+                const ai = aiMap[key];
+                const options = w?.options || {};
+
+                if (w.type === 'radio' && Array.isArray(options.choices)) {
+                    const choices = options.choices.map((c, i) => ({ ...c, id: c.id || `radio-choice-${i}` }));
+                    const indices = Array.isArray(ai) ? ai : [ai];
+                    if (indices.some(i => typeof i !== 'number' || !Number.isInteger(i) || i < 0 || i >= choices.length)) continue;
+                    const choiceIds = indices.map(i => choices[i].id);
+                    if (choiceIds.length > 0) {
+                        answers.push({ type: 'radio', choiceIds, multipleSelect: options.multipleSelect || false, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'dropdown' && Array.isArray(options.choices)) {
+                    const value = Number(ai);
+                    if (Number.isInteger(value) && value >= 1 && value <= options.choices.length) {
+                        answers.push({ type: 'dropdown', value, choices: options.choices.map(c => c.content), placeholder: options.placeholder || '', widgetKey: key });
+                    }
+                }
+                else if (w.type === 'numeric-input') {
+                    if (ai === null || ai === undefined || ai === '') continue;
+                    let val = String(ai);
+                    const formInfo = options.answers?.find(x => x.answerForms?.length) || options.answers?.[0];
+                    if (formInfo?.answerForms?.some(f => ['proper', 'improper', 'mixed'].includes(f))) {
+                        const num = Number(ai);
+                        if (!Number.isNaN(num)) val = toFraction(num);
+                    }
+                    answers.push({ type: 'numeric-input', value: val, simplify: formInfo?.simplify || 'required', widgetKey: key });
+                }
+                else if (w.type === 'input-number') {
+                    if (ai === null || ai === undefined || ai === '') continue;
+                    const num = Number(ai);
+                    let val = String(ai);
+                    if (num > 0 && num < 1 && String(ai).includes('.')) val = toFraction(num);
+                    answers.push({ type: 'input-number', value: val, simplify: options.simplify || 'required', answerType: options.answerType || 'number', widgetKey: key });
+                }
+                else if (w.type === 'expression') {
+                    if (ai === null || ai === undefined || ai === '') continue;
+                    answers.push({ type: 'expression', value: String(ai), buttonSets: Array.isArray(options.buttonSets) ? options.buttonSets : ['basic'], functions: Array.isArray(options.functions) ? options.functions : ['f', 'g', 'h'], times: !!options.times, widgetKey: key });
+                }
+                else if (w.type === 'grapher') {
+                    const g = typeof ai === 'object' ? ai : {};
+                    if (g.type && Array.isArray(g.coords)) {
+                        answers.push({ type: 'grapher', graphType: g.type, coords: g.coords, asymptote: g.asymptote ?? null, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'interactive-graph') {
+                    const g = typeof ai === 'object' ? ai : {};
+                    if (Array.isArray(g.coords)) {
+                        answers.push({ type: 'interactive-graph', coords: g.coords, match: g.match || 'congruent', graphType: g.graphType || g.type, showSides: g.showSides, snapTo: g.snapTo, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'categorizer') {
+                    if (Array.isArray(ai)) {
+                        answers.push({ type: 'categorizer', values: ai, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'matcher') {
+                    const m = typeof ai === 'object' ? ai : {};
+                    if (m.left && m.right) {
+                        answers.push({ type: 'matcher', left: m.left, right: m.right, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'orderer') {
+                    if (Array.isArray(ai)) {
+                        answers.push({ type: 'orderer', correctOptions: ai, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'sorter') {
+                    if (Array.isArray(ai)) {
+                        answers.push({ type: 'sorter', correct: ai, layout: options.layout || 'horizontal', padding: options.padding !== undefined ? !!options.padding : true, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'number-line') {
+                    if (ai !== null && ai !== undefined && ai !== '') {
+                        answers.push({ type: 'number-line', correctX: Number(ai), correctRel: options.correctRel || 'eq', widgetKey: key });
+                    }
+                }
+                else if (w.type === 'plotter') {
+                    if (Array.isArray(ai)) {
+                        answers.push({ type: 'plotter', correct: ai, plotType: options.type || 'bar', categories: Array.isArray(options.categories) ? options.categories : [], labels: Array.isArray(options.labels) ? options.labels : [], maxY: options.maxY || 24, scaleY: options.scaleY || 1, snapsPerLine: options.snapsPerLine || 1, labelInterval: options.labelInterval || 1, starting: Array.isArray(options.starting) ? options.starting : [], picUrl: options.picUrl ?? null, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'matrix') {
+                    if (Array.isArray(ai)) {
+                        answers.push({ type: 'matrix', answers: ai, prefix: options.prefix || '', suffix: options.suffix || '', matrixBoardSize: options.matrixBoardSize || [3, 3], cursorPosition: options.cursorPosition || [0, 0], widgetKey: key });
+                    }
+                }
+                else if (w.type === 'table') {
+                    if (Array.isArray(ai)) {
+                        answers.push({ type: 'table', answers: ai, widgetKey: key });
+                    }
+                }
+                else if (w.type === 'label-image') {
+                    if (Array.isArray(options.markers) && Array.isArray(ai)) {
+                        const markers = options.markers.map((marker, i) => ({
+                            label: marker.label,
+                            answers: Array.isArray(ai[i]) ? ai[i] : [],
+                            x: marker.x,
+                            y: marker.y
+                        }));
+                        answers.push({
+                            type: 'label-image',
+                            markers,
+                            choices: Array.isArray(options.choices) ? options.choices : [],
+                            imageUrl: options.imageUrl || '',
+                            imageWidth: options.imag
